@@ -86,8 +86,9 @@ if __name__=='__main__':
     model=GBDTClassfier(n_trees=5,min_samples_leaf=1,max_depth=2)
     model.fit(datasets)
     X_test=[[25],[100],[10],[900],[-10]]
-    model.predict(X_test)
-
+    pred=model.predict(X_test)
+    print(pred)
+    
     from sklearn.ensemble import GradientBoostingClassifier
 
     print('================================GBDT分类结果_sklearn实现================================')
