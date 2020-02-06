@@ -318,7 +318,8 @@ class CARTRegressor(BaseDecisionTree):
     '''
     CART回归算法
     '''        
-    def fit(self,data):
+    def fit(self,data,sample_weight=None):
+        #sample_weight用于adaboost
         def dfs(new_data,depth,data_index):  #递归创建树
             #当前节点样本个数小于阈值 or 数据集的MSE小于阈值 or 树深度大于max_depth时，停止
             if len(new_data)<self.min_samples_leaf or self.cal_mse(new_data)[1]<self.epsilon or depth>=self.max_depth:  
@@ -328,7 +329,8 @@ class CARTRegressor(BaseDecisionTree):
                 new_node.data_index=data_index
                 return new_node
             
-            best_feature,best_split_point,min_mse,next_data_with_index_list=self.chooseBestFeature(new_data,data_index)  #选取最优的特征
+            #选取最优的特征
+            best_feature,best_split_point,min_mse,next_data_with_index_list=self.chooseBestFeature(new_data,data_index,sample_weight)  
 
             new_node=DecisionTreeNode()
             new_node.feature=best_feature
@@ -348,7 +350,7 @@ class CARTRegressor(BaseDecisionTree):
         
         return self.root
     
-    def chooseBestFeature(self,data,data_index):#选取最优的特征及特征值
+    def chooseBestFeature(self,data,data_index,sample_weight):#选取最优的特征及特征值
         
         ent=ID3.entropy(data)  #数据集的经验熵
         n_features=len(data[0])-1  #特征个数
@@ -362,8 +364,8 @@ class CARTRegressor(BaseDecisionTree):
                 new_data_index0,new_data0=[x[0] for x in new_data_with_index_list[0]],[x[1] for x in new_data_with_index_list[0]]
                 new_data_index1,new_data1=[x[0] for x in new_data_with_index_list[1]],[x[1] for x in new_data_with_index_list[1]]
                 
-                c1,mse1=self.cal_mse(new_data0)
-                c2,mse2=self.cal_mse(new_data1)
+                c1,mse1=self.cal_mse(new_data0,sample_weight)
+                c2,mse2=self.cal_mse(new_data1,sample_weight)
                 
                 mse=mse1+mse2
                 if mse<min_mse:
@@ -380,9 +382,10 @@ class CARTRegressor(BaseDecisionTree):
             i+=1
         return new_data
     
-    def cal_mse(self,data):
+    def cal_mse(self,data,sample_weight):
         c=sum([x[-1] for x in data])/len(data)
-        mse=sum([(x[-1]-c)**2 for x in data])
+        if sample_weight==None:mse=sum([(x[-1]-c)**2 for x in data])
+        else :mse=sum([y*(x[-1]-c)**2 for (x,y) in zip(data,sample_weight)])
         return c,mse
     
     def cal_gamma(self,data,K):
@@ -401,6 +404,7 @@ class CARTRegressor(BaseDecisionTree):
                 else:curr_node=list(curr_node.tree.values())[1]
             pre.append(curr_node.label)
         return pre
+
 
 if __name__=='__main__':
     datasets = [['青年', '否', '否', '一般', '否否'],
