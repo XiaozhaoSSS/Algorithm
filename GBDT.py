@@ -7,7 +7,7 @@ from sklearn.preprocessing import OneHotEncoder
 
 class GBDTClassfier(CARTRegressor):
     def __init__(self,learning_rate=1,n_trees=None,min_samples_leaf=None,max_depth=None):
-        super().__init__()
+        #super().__init__(min_samples_leaf ,max_depth)
         self.learning_rate = learning_rate
         self.n_trees = n_trees
         self.min_samples_leaf = min_samples_leaf
@@ -33,7 +33,6 @@ class GBDTClassfier(CARTRegressor):
         for i in range(self.K):
             F[:,i]=[label_dict[i]]*m
         
-        tree=CARTRegressor(min_samples_leaf=self.min_samples_leaf,max_depth=self.max_depth,is_gradient=True,K=self.K)
         for i in range(self.n_trees):
             P=np.exp(F)
             P=P/np.sum(P,axis=1).reshape(-1,1)
