@@ -1,13 +1,8 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[20]:
-
-
 import numpy as np
 import math
 from abc import abstractmethod
 import operator
+from collections import Counter
 
 # 定义节点类
 class DecisionTreeNode:
@@ -112,7 +107,8 @@ class BaseDecisionTree:
     
     @staticmethod
     def gini(data,a=None,value=None):
-        n=len(data)  
+        n=len(data)
+        if n==0:return 0
         if not a:
             label_dict={} 
             for i in range(n):
@@ -139,13 +135,26 @@ class BaseDecisionTree:
                 new_data[curr_data[a]].append(next_data)
                 i+=1
             return list(new_data.values())
-        else:
+        elif type(value)==str:
             new_data=[[],[]]
             i=0
             for curr_data in data:
                 if data_index==None:next_data=curr_data
                 else:next_data=(data_index[i],curr_data)
                 if curr_data[a]==value:
+                    new_data[0].append(next_data)
+                else:
+                    new_data[1].append(next_data)
+                i+=1
+            return new_data
+            
+        else:
+            new_data=[[],[]]
+            i=0
+            for curr_data in data:
+                if data_index==None:next_data=curr_data
+                else:next_data=(data_index[i],curr_data)
+                if curr_data[a]<value:
                     new_data[0].append(next_data)
                 else:
                     new_data[1].append(next_data)
@@ -259,7 +268,7 @@ class CARTClassifier(ID3):
     '''
     CART分类算法
     '''
-    def fit(self,data):
+    def fit(self,data,sample_weight=None):
         def dfs(new_data,depth,data_index):  #递归创建树
             #当前节点样本个数小于阈值 or 数据集的Gini指数小于阈值 or 树深度大于max_depth时，停止
             if len(new_data)<self.min_samples_leaf or ID3.gini(new_data)<self.epsilon or depth>=self.max_depth:  
@@ -268,7 +277,7 @@ class CARTClassifier(ID3):
                 new_node.data_index=data_index
                 return new_node
             
-            best_feature,best_value,min_gini=self.chooseBestFeature(new_data)  #选取最优的特征
+            best_feature,best_value=self.chooseBestFeature(new_data,sample_weight)  #选取最优的特征
 
             new_node=DecisionTreeNode()
             new_node.feature=best_feature
@@ -280,8 +289,12 @@ class CARTClassifier(ID3):
             
             next_data_index0,next_data0=[x[0] for x in next_data_with_index_list[0]],[x[1] for x in next_data_with_index_list[0]]
             next_data_index1,next_data1=[x[0] for x in next_data_with_index_list[1]],[x[1] for x in next_data_with_index_list[1]]
-            new_node.tree["="+best_value]=dfs(next_data0,depth+1,next_data_index0)
-            new_node.tree["≠"+best_value]=dfs(next_data1,depth+1,next_data_index1)
+            
+            if type(best_value)==str:symbol_left,symbol_right="="+best_value,"≠"+best_value
+            else:symbol_left,symbol_right="<"+str(best_value),">="+str(best_value)
+            
+            new_node.tree[symbol_left]=dfs(next_data0,depth+1,next_data_index0)
+            new_node.tree[symbol_right]=dfs(next_data1,depth+1,next_data_index1)
             return new_node
         
         data_index=list(range(len(data)))
@@ -289,28 +302,65 @@ class CARTClassifier(ID3):
         
         return self.root
     
-    def chooseBestFeature(self,data):#选取最优的特征及特征值
+    def chooseBestFeature(self,data,sample_weight=None):#选取最优的特征及特征值
         
-        ent=ID3.entropy(data)  #数据集的经验熵
         n_features=len(data[0])-1  #特征个数
         n=len(data)  #数据个数
-        min_gini,best_feature,best_value=float("Inf"),None,None  #每个特征对数据集的信息增益比
-        for i in range(n_features):
-            values=list(set([x[i] for x in data]))
-            for value in values:
-                curr_gini=ID3.gini(data,i,value)
-                if curr_gini<min_gini:
-                    min_gini=curr_gini
-                    best_feature,best_value=i,value
-        return best_feature,best_value,min_gini
+        
+        if sample_weight:
+            min_error,best_feature,best_value=float("Inf"),None,None
+            data,sample_weight=np.array(data),np.array(sample_weight).reshape((-1,1))
+            data=np.hstack((data,sample_weight)).tolist()   #将样本权重添至数据最后一列，以便划分数据时计算误差
+            
+            for i in range(n_features):
+                values=list(set([x[i] for x in data]))
+                for value in values:
+                    
+                    curr_error=self.cal_error(data,i,value)
+                    if curr_error<min_error:
+                        min_error=curr_error
+                        best_feature,best_value=i,value
+        else:            
+            min_gini,best_feature,best_value=float("Inf"),None,None  #每个特征对数据集的信息增益比
+            for i in range(n_features):
+                values=list(set([x[i] for x in data]))
+                for value in values:
+                    curr_gini=ID3.gini(data,i,value)
+                    if curr_gini<min_gini:
+                        min_gini=curr_gini
+                        best_feature,best_value=i,value
+            
+        return best_feature,best_value
+    
+    def cal_error(self,data,a,value):
+        #计算分类误差
+        error=0
+        new_data=ID3.data_divide(data,a,value=value)
+        if new_data[0]!=[]:class0=Counter([x[-2] for x in new_data[0]]).most_common(1)[0][0]   #统计出现次数最多的类
+        if new_data[1]!=[]:class1=Counter([x[-2] for x in new_data[1]]).most_common(1)[0][0]
+        
+        for x in new_data[0]:
+            if x[-2]!=class0:error+=x[-1]
+        for x in new_data[1]:
+            if x[-2]!=class1:error+=x[-1]
+        
+        return error
+        
+        
     
     def predict(self,data):
         pre=[]
         for curr_data in data:
             curr_node=self.root
             while curr_node.tree:
-                if "="+curr_data[curr_node.feature] in curr_node.tree:curr_node=list(curr_node.tree.values())[0]
-                else:curr_node=list(curr_node.tree.values())[1]
+                if type(curr_data[curr_node.feature])==str:
+                    if "="+curr_data[curr_node.feature] in curr_node.tree:curr_node=list(curr_node.tree.values())[0]
+                    else:curr_node=list(curr_node.tree.values())[1]
+                else:
+                    if curr_data[curr_node.feature]<float(list(curr_node.tree.keys())[0][1:]):curr_node=list(curr_node.tree.values())[0]
+                    else:curr_node=list(curr_node.tree.values())[1]
+                    
+                
             pre.append(curr_node.label)
         return pre
     
@@ -322,9 +372,9 @@ class CARTRegressor(BaseDecisionTree):
         #sample_weight用于adaboost
         def dfs(new_data,depth,data_index):  #递归创建树
             #当前节点样本个数小于阈值 or 数据集的MSE小于阈值 or 树深度大于max_depth时，停止
-            if len(new_data)<self.min_samples_leaf or self.cal_mse(new_data)[1]<self.epsilon or depth>=self.max_depth:  
+            if len(new_data)<self.min_samples_leaf or self.cal_mse(new_data,sample_weight)[1]<self.epsilon or depth>=self.max_depth:  
                 new_node=DecisionTreeNode()
-                if not self.is_gradient:new_node.label=self.cal_mse(new_data)[0]
+                if not self.is_gradient:new_node.label=self.cal_mse(new_data,sample_weight)[0]
                 else:new_node.label=self.cal_gamma([x[-1] for x in new_data],self.K)  #如果用于GBDT的话，将y值取出计算最佳负梯度拟合值
                 new_node.data_index=data_index
                 return new_node
@@ -382,10 +432,10 @@ class CARTRegressor(BaseDecisionTree):
             i+=1
         return new_data
     
-    def cal_mse(self,data,sample_weight):
+    def cal_mse(self,data,sample_weight=None):
         c=sum([x[-1] for x in data])/len(data)
         if sample_weight==None:mse=sum([(x[-1]-c)**2 for x in data])
-        else :mse=sum([y*(x[-1]-c)**2 for (x,y) in zip(data,sample_weight)])
+        else :mse=sum([y*(x[-1]-c)**2 for x,y in zip(data,sample_weight)])
         return c,mse
     
     def cal_gamma(self,data,K):
@@ -407,6 +457,7 @@ class CARTRegressor(BaseDecisionTree):
 
 
 if __name__=='__main__':
+    
     datasets = [['青年', '否', '否', '一般', '否否'],
                ['青年', '否', '否', '好', '否否'],
                ['青年', '是', '否', '好', '是是'],
@@ -433,6 +484,7 @@ if __name__=='__main__':
     tree.predict([['老年', '否', '否', '一般']])
     print(tree.root.print_leaf_node())
 
+
     print('================================ID3分类结果================================')
     tree=ID3()
     tree.fit(datasets)
@@ -441,6 +493,8 @@ if __name__=='__main__':
 
     tree.predict([['老年', '否', '否', '一般']])
     print(tree.root.print_leaf_node())
+
+
 
     print('================================CART分类结果================================')
     tree=CARTClassifier()
@@ -464,10 +518,28 @@ if __name__=='__main__':
                [10,9.0]]
     print('================================CART回归结果================================')
     labels = ['维度一']
-    tree=CARTRegressor(max_depth=2)
+    tree=CARTRegressor(max_depth=5)
     tree.fit(datasets)
 
-    print(tree.root.display(labels))
+    print('树结构可视化',tree.root.display(labels))
 
-    tree.predict([[1.8]])
-    tree.root.print_leaf_node()
+    print('预测结果：',tree.predict([[1.8]]))
+    print('叶子节点信息：',tree.root.print_leaf_node())
+
+
+    from sklearn.datasets import load_iris
+    from sklearn.model_selection import train_test_split
+
+    X, y = load_iris(return_X_y=True)
+    X_train,X_test,y_train,y_test=train_test_split(X,y,test_size=0.2)
+
+    print("========================CART训练iris数据集========================")
+    model=CARTClassifier()
+    model.fit(np.hstack((X_train,y_train.reshape((-1,1)))))
+    print('预测结果：',model.predict(X_test))
+
+    print("========================sklearn实现========================")
+    from sklearn.tree import DecisionTreeClassifier
+    clf = DecisionTreeClassifier(random_state=0)
+    clf.fit(X_train,y_train)
+    print('预测结果',clf.predict(X_test))
